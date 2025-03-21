@@ -37,18 +37,11 @@ def format_date(iso_date):
 
 def filter_messages(data, username, first_word=None, conversation_id=None, search_method="first_word"):
     """
-    Filter messages from the Skype conversation data.
-
-    Parameters:
-    - username: the sender to filter messages for.
-    - first_word: the first word to match (used in "first_word" search method).
-    - conversation_id: if provided, only process this conversation.
-    - search_method: "first_word" (default) or "review". If "review" is selected,
-      the function checks if the message qualifies as a video game review by searching for
-      a rating pattern (e.g. '8.5/10').
+    Filter messages from the Skype conversation data and sort them by date (oldest to newest).
     """
     filtered = []
     conversations = data.get("conversations", [])
+    
     for convo in conversations:
         if conversation_id and convo.get("id") != conversation_id:
             continue
@@ -66,23 +59,34 @@ def filter_messages(data, username, first_word=None, conversation_id=None, searc
             if sender != username:
                 continue
 
+            iso_date = message.get("originalarrivaltime", "Unknown Date")
+            try:
+                dt = datetime.fromisoformat(iso_date.rstrip("Z"))  # Remove 'Z' if present and parse
+            except ValueError:
+                dt = None  # If date is invalid, leave as None
+
+            formatted_date = format_date(iso_date)
+            
             if search_method == "first_word":
                 if first_word and words[0] == first_word:
-                    iso_date = message.get("originalarrivaltime", "Unknown Date")
-                    formatted_date = format_date(iso_date)
                     filtered.append({
+                        "datetime": dt,
                         "date": formatted_date,
                         "content": content
                     })
             elif search_method == "review":
                 if re.search(r'\b\d+(\.\d+)?/10\b', content):
-                    iso_date = message.get("originalarrivaltime", "Unknown Date")
-                    formatted_date = format_date(iso_date)
                     filtered.append({
+                        "datetime": dt,
                         "date": formatted_date,
                         "content": content
                     })
+
+    # Sort messages by datetime (oldest to newest), handling None dates as well
+    filtered.sort(key=lambda x: x["datetime"] if x["datetime"] else datetime.min)
+    
     return filtered
+
 
 def get_available_filename(filename):
     """
@@ -108,10 +112,10 @@ def save_to_word(filtered_messages, output_file, username, search_method):
     """
     doc = Document()
     method_text = "First word search" if search_method == "first_word" else "Video game review search"
-    doc.add_heading(f"Messages by {username} - {method_text}", level=1)
+    doc.add_heading(f"Reviews by {username}", level=1)
     
     for i, msg in enumerate(filtered_messages, start=1):
-        doc.add_heading(f"Message {i} - {msg['date']}", level=2)
+        doc.add_heading(f"Review #{i} - {msg['date']}", level=2)
         doc.add_paragraph("Message content:")
         doc.add_paragraph(msg["content"])
         doc.add_paragraph("-" * 40)
